@@ -17,7 +17,7 @@ To the extent that any of these Supplemental Terms conflict with terms in the EU
 
 """
 error
-Author: Morgan Allison, Keysight RF/uW Application Engineer
+Author: Keysight Technologies
 Custom error classes for pyarbtools.
 """
 
