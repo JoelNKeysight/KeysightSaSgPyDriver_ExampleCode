@@ -30,9 +30,10 @@ import KeysightSaDriver
 
 
 
-
+#VSG and SA IP address. USB sensor VISA address
 vsg_address = ""
 sa_address = ""
+powersensor_visa_address = ""
 
 #1CC files
 vsg_waveform_file=""
@@ -58,6 +59,10 @@ SG_POWER_STOP = 0
 SG_POWER_STEP = 1
 SG_POWER_DBM = np.arange(SG_POWER_START, SG_POWER_STOP + (SG_POWER_STEP/2), SG_POWER_STEP)
 
+# valid equipment
+use_vsg = True
+use_sa = False  
+use_power_sensor = True
 
 # measurement functions
 evm_bathtub = False
@@ -69,43 +74,40 @@ sa_acp = False
 sa_ccdf = False
 sa_burst_power = False
 sa_toi = False
-sa_sweep_spectrum = True
-
+sa_sweep_spectrum = False
+power_sensor_power_sweep = True
 
 # Connect to SG and SA
-vsg = KeysightSgDriver.VXG(vsg_address,"pyvisa",10,protocol="hislip",port=0)
-sa = KeysightSaDriver.UXA(sa_address,"pyvisa",30,protocol="hislip", port=0)
-print(f"Connected to SA at address {sa_address} and SG at address {vsg_address}")
+if use_vsg:
+    vsg = KeysightSgDriver.VXG(vsg_address,"pyvisa",10,protocol="hislip",port=0)
+    print(f"Connected to SG at address {vsg_address}")
+if use_sa:
+    sa = KeysightSaDriver.UXA(sa_address,"pyvisa",30,protocol="hislip", port=0)
+    print(f"Connected to SA at address {sa_address}")
+if use_power_sensor:
+    ps = KeysightPowerSensorDriver.PowerSensor(powersensor_visa_address, 20)
+    print(f"Connected to Power Sensor at address {powersensor_visa_address}")
 
+if use_vsg:
+    # Download waveform from local PC to SG 
+    vsg.download_wfm(wfmID = vsg_waveform_file, localPath = f"{os.getcwd()}\\Waveform")
+    # vsg.download_wfm(wfmID = vsg_waveform_file, localPath = f"{os.getcwd()}\\KeysightSaSgDriver\\Waveform")
 
-# Build csv file name and open the file
-#print(os.getcwd())
-csvFileName = f"{os.getcwd()}\\Results\\EVM_Bathtub_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-# csvFileName = f"{os.getcwd()}\\KeysightSaSgDriver\\Results\\EVM_Bathtub_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+if use_sa:
+    # download state file from local PC to SA 
+    stateFileList = sa.get_state_files()
+    print(f"Current state files in SA: {stateFileList}")
 
-resultID = csvResult.open_csv(csvFileName)
+    # check if state file exists then transfer if not
+    if sa_ofdm_state_file not in stateFileList:
+        print(f"State file {sa_ofdm_state_file} not found in SA. Transferring file...")
+        sa.transfer_file(f"{os.getcwd()}\\SA State Files\\{sa_ofdm_state_file}")
+        # sa.transfer_file(f"{os.getcwd()}\\KeysightSaSgDriver\\SA State Files\\{sa_ofdm_state_file}")
 
-# Write cvs result file field name header
-csvResult.write_header(resultID, "CC,Frequency,Tx Power,Rx Power,EVM (%),EVM(dB)")
-
-# Download waveform from local PC to SG 
-vsg.download_wfm(wfmID = vsg_waveform_file, localPath = f"{os.getcwd()}\\Waveform")
-# vsg.download_wfm(wfmID = vsg_waveform_file, localPath = f"{os.getcwd()}\\KeysightSaSgDriver\\Waveform")
-
-# download state filr from local PC to SA 
-stateFileList = sa.get_state_files()
-print(f"Current state files in SA: {stateFileList}")
-
-# check if state file exists then transfer if not
-if sa_ofdm_state_file not in stateFileList:
-    print(f"State file {sa_ofdm_state_file} not found in SA. Transferring file...")
-    sa.transfer_file(f"{os.getcwd()}\\SA State Files\\{sa_ofdm_state_file}")
-    # sa.transfer_file(f"{os.getcwd()}\\KeysightSaSgDriver\\SA State Files\\{sa_ofdm_state_file}")
-
-if sa_acp_state_file not in stateFileList:
-    print(f"State file {sa_acp_state_file} not found in SA. Transferring file...")
-    sa.transfer_file(f"{os.getcwd()}\\SA State Files\\{sa_acp_state_file}")
-    # sa.transfer_file(f"{os.getcwd()}\\KeysightSaSgDriver\\SA State Files\\{sa_acp_state_file}")
+    if sa_acp_state_file not in stateFileList:
+        print(f"State file {sa_acp_state_file} not found in SA. Transferring file...")
+        sa.transfer_file(f"{os.getcwd()}\\SA State Files\\{sa_acp_state_file}")
+        # sa.transfer_file(f"{os.getcwd()}\\KeysightSaSgDriver\\SA State Files\\{sa_acp_state_file}")
 
 if acp:
     print("Running ACP test...")
@@ -147,7 +149,18 @@ if acp:
 
 if evm_bathtub:
     print("Running EVM bathtub curve test...")
-    
+
+    # Build csv file name and open the file
+    #print(os.getcwd())
+    csvFileName = f"{os.getcwd()}\\Results\\EVM_Bathtub_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    # csvFileName = f"{os.getcwd()}\\KeysightSaSgDriver\\Results\\EVM_Bathtub_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+    evmResultID = csvResult.open_csv(csvFileName)
+
+    # Write cvs result file field name header
+    csvResult.write_header(evmResultID, "CC,Frequency,Tx Power,Rx Power,EVM (%),EVM(dB)")
+
+    #recall state file for vma measurement
     sa.recall_state(f"D:\\users\\instrument\\documents\\vma\\state\\{sa_ofdm_state_file}")
    
  
@@ -185,13 +198,13 @@ if evm_bathtub:
                 
                 print(f"Carrier: {carrier}, Freq: {test_freq} Hz,Tx Power: {test_power} dBm, Rx Power: {rxPower}, EVM(%): {evm} %, EVM(dB): {evm_db} dB")
                 # write result to csv file
-                csvResult.write_row(resultID, f"{carrier},{test_freq},{test_power},{rxPower},{evm},{evm_db}")
+                csvResult.write_row(evmResultID, f"{carrier},{test_freq},{test_power},{rxPower},{evm},{evm_db}")
                 
           
             
 
     # close cvs file
-    csvResult.close_csv(resultID)
+    csvResult.close_csv(evmResultID)
 
 if sa_chp:
     print("Running CHP test...")
@@ -199,7 +212,7 @@ if sa_chp:
     span = "1000e6"  # Example span value
     test_freq = "5000e6"  # Example test frequency value
     test_power = "-10"  # Example test power value
-    channel_bandwidth = "100e6"  # Example channel bandwidth value
+    channel_bandwidth = "864e6"  # Example channel bandwidth value
 
 
     # config waveform sampling rate amd center frequency
@@ -226,7 +239,7 @@ if sa_obw:
     span = "1000e6"  # Example span value
     test_freq = "5000e6"  # Example test frequency value
     test_power = "-10"  # Example test power value
-    channel_bandwidth = "100e6"  # Example channel bandwidth value
+    channel_bandwidth = "864e6"  # Example channel bandwidth value
 
 
     # config waveform sampling rate amd center frequency
@@ -254,9 +267,9 @@ if sa_acp:
     span = "1000e6"  # Example span value
     test_freq = "5000e6"  # Example test frequency value
     test_power = "-10"  # Example test power value
-    channel_bandwidth = "100e6"  # Example channel bandwidth value
+    channel_bandwidth = "864e6"  # Example channel bandwidth value
     carrier_count = 1  # Example carrier count value
-    Offset_Freq = "100e6"  # Example offset frequency value
+    Offset_Freq = "900e6"  # Example offset frequency value
 
     # config waveform sampling rate amd center frequency
     vsg.set_fs(float(vsg_fs),ch=1)
@@ -284,9 +297,9 @@ if sa_ccdf:
     span = "1000e6"  # Example span value
     test_freq = "5000e6"  # Example test frequency value
     test_power = "-10"  # Example test power value
-    channel_bandwidth = "100e6"  # Example channel bandwidth value
+    channel_bandwidth = "864e6"  # Example channel bandwidth value
     carrier_count = 1  # Example carrier count value
-    Offset_Freq = "100e6"  # Example offset frequency value
+    Offset_Freq = "900e6"  # Example offset frequency value
 
     # config waveform sampling rate amd center frequency
     vsg.set_fs(float(vsg_fs),ch=1)
@@ -313,7 +326,7 @@ if sa_burst_power:
     test_power = "-10"  # Example test power value
     sweep_time = "0.001"  # Example sweep time value
     carrier_count = 1  # Example carrier count value
-    Offset_Freq = "100e6"  # Example offset frequency value
+    Offset_Freq = "900e6"  # Example offset frequency value
 
     # config waveform sampling rate amd center frequency
     vsg.set_fs(float(vsg_fs),ch=1)
@@ -340,9 +353,9 @@ if sa_toi:
     span = "50e6"  # Example span value
     test_freq = "5000e6"  # Example test frequency value
     test_power = "-10"  # Example test power value
-    channel_bandwidth = "100e6"  # Example channel bandwidth value
+    channel_bandwidth = "864e6"  # Example channel bandwidth value
     carrier_count = 1  # Example carrier count value
-    Offset_Freq = "100e6"  # Example offset frequency value
+    Offset_Freq = "900e6"  # Example offset frequency value
 
     # config waveform sampling rate amd center frequency
     # vsg.set_fs(float(vsg_fs),ch=1)
@@ -374,7 +387,7 @@ if sa_toi:
 if sa_sweep_spectrum:
     print("Running Swept Spectrum test...")
 
-    span = "100e6"  # Example span value
+    span = "1000e6"  # Example span value
     test_freq = "5000e6"  # Example test frequency value
     test_power = "-10"  # Example test power value
 
@@ -401,3 +414,60 @@ if sa_sweep_spectrum:
 
     sa.optimize_SA_Attenuation()
     sa.set_continuous_measurement(True)
+
+if power_sensor_power_sweep :
+    print("Running Power Sweep test...")
+
+    # Build csv file name and open the file
+    #print(os.getcwd())
+    csvFileName = f"{os.getcwd()}\\Results\\Power_Sweep_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    # csvFileName = f"{os.getcwd()}\\KeysightSaSgDriver\\Results\\Power_Sweep_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+    powerResultID = csvResult.open_csv(csvFileName)
+
+    # Write cvs result file field name header
+    csvResult.write_header(powerResultID, "Frequency,Source Power,Measure Power")
+
+    #recall state file for vma measurement
+    # sa.recall_state(f"D:\\users\\instrument\\documents\\vma\\state\\{sa_ofdm_state_file}")
+   
+    ps.preset()
+    print("Power Sensor preset to default settings")
+
+    ps.set_measurement_mode("Average")
+    print("Power Sensor set to Average Power measurement mode")
+
+    ps.set_trigger("Immediate")
+    print("Power Sensor trigger set to Immediate, hold off 0.001 s, delay 0 s, level -25 dBm")
+
+
+
+    for test_freq in FREQUENCY_HZ:
+        # config waveform sampling rate amd center frequency
+        vsg.set_fs(float(vsg_fs),ch=1)
+        vsg.set_cf(float(test_freq),ch=1)
+
+        ps.set_frequency_MHz(test_freq/1e6)
+        print(f"Power Sensor frequency set to {test_freq/1e6} MHz")
+
+        for test_power in SG_POWER_DBM:
+            # Stop source waveform playing
+            vsg.stop(ch=1)
+            # set SG putput power
+            vsg.set_amp(test_power, ch=1)
+            # turn on SG and play waveform
+            vsg.play(wfmID=vsg_waveform_file,ch=1)
+
+            ps.set_fast_measurement(False)
+            print("Power Sensor set to Normal measurement mode")
+            power_result = ps.query_power()
+            print(f"Normal measurement Average Power: {power_result} dBm")
+            # write results to file
+            print(f"Freq: {test_freq} Hz, Source Power: {test_power} dBm, Measure Power: {power_result}")
+            # write result to csv file
+            csvResult.write_row(powerResultID, f"{test_freq},{test_power},{power_result}")
+
+
+
+    # close cvs file
+    csvResult.close_csv(powerResultID)
